@@ -1,0 +1,278 @@
+CREATE OR REPLACE PACKAGE APP_FLYER.PKG_DAO_APP_FLYER
+--------------------------------------------------------------------------------
+--  📦 PAQUETE        : PKG_SERV_APP_FLYER
+--  👤 AUTOR          : Piero Alvarez
+--  🗓  FECHA CREACIÓN: 03/08/2025
+--  🧩 MÓDULO         : [Aplicacion de FLyers.]  [Version Actual] v.1.0.0
+--
+--  📝 DESCRIPCIÓN
+--     Este paquete contiene el manejo de los datos, insert, select para la aplicacion de flyers.
+--     Incluye funciones y procedimientos para:
+--       - [Ej. Inserta los tipos de adjuntos del flyer]
+--       - [Ej. Insertar los errores criticos o no contemplados que genera la aplicacion.]
+--       - [Ej. Inserta los flyers.]
+--       - [Ej. Inserta los adjuntos perteneciente a cada flyer.]
+--       - [Ej. Selecciona los flyers]
+--       - [Ej. Selecciona los adjuntos pertenecientes a cada flyer.]
+--
+--  📂 DEPENDENCIAS
+--     - Tablas : TP_FLYER, TA_TIPO_ADJU,TP_ADJU,TP_ERROR_APP
+--
+--  🔐 PERMISOS NECESARIOS
+--     - CREATE DIRECTORY APP_FLYERS AS 'C:\directory_oracle\app_flyer';
+--       GRANT READ, WRITE ON DIRECTORY APP_FLYERS TO APP_FLYER;
+--
+--     - CREATE DIRECTORY APP_FLYER_ADJUNTO AS 'C:\directory_oracle\app_flyer\ADJUNTOS';
+--       GRANT READ,WRITE ON DIRECTORY APP_FLYER_ADJUNTO TO APP_FLYER;
+--
+--  🛠 HISTORIAL DE CAMBIOS
+--     - [03/08/2025] Creación del funcion pipelined SEL_ADJU_FLYER (Piero Alvarez)
+--     - [03/08/2025] Creación del procedimiento INS_ADJU (Piero Alvarez)
+--     - [03/08/2025] Creación del funcion pipelined SEL_FLYER (Piero Alvarez)
+--     - [03/08/2025] Creación del procedimiento INS_FLYER (Piero Alvarez)
+--     - [03/08/2025] Creación del procedimiento INS_ERROR_LOG (Piero Alvarez)
+--     - [03/08/2025] Creación del procedimiento INS_TIPO_ADJU (Piero Alvarez)
+--     - [03/08/2025] Creación del paquete PKG_DAO_APP_FLYER (Piero Alvarez)
+--------------------------------------------------------------------------------
+AS
+  PROCEDURE INS_TIPO_ADJU(
+     PIV_NO_TIPO_ADJU VARCHAR2,
+     PII_CO_USER INTEGER
+  );
+  PROCEDURE INS_ERROR_LOG(
+     PIV_ERROR_APP VARCHAR2,
+     PII_CO_USER INTEGER
+  );
+  
+  PROCEDURE INS_FLYER(
+     PIV_NO_FLYER VARCHAR2,
+     PIB_IMG BLOB,
+     PII_CO_USER INTEGER
+  );
+  FUNCTION SEL_FLYER RETURN TA_FLYER PIPELINED;
+  
+  PROCEDURE INS_ADJU
+  (PIC_CO_TIPO_ADJU CHAR,
+   PIC_CO_FLYER CHAR,
+   PIV_NO_ADJUNTO VARCHAR2,
+   PIB_DOC_BLOB BLOB,
+   PIV_URL_DRIVE VARCHAR2,
+   PII_CO_USER INTEGER
+  );
+  FUNCTION SEL_ADJU_FLYER(PIC_CO_FLYER CHAR) RETURN TA_ADJU PIPELINED;
+END;
+/
+CREATE OR REPLACE PACKAGE BODY APP_FLYER.PKG_DAO_APP_FLYER
+AS
+  PROCEDURE INS_TIPO_ADJU(
+     PIV_NO_TIPO_ADJU VARCHAR2,
+     PII_CO_USER INTEGER
+  )
+  IS 
+  BEGIN 
+    INSERT INTO APP_FLYER.TA_TIPO_ADJU
+    (ID_TIPO_ADJU,NO_TIPO_ADJU,CO_USER_APP)
+    VALUES
+    (LPAD(SEQ_TA_TIPO_ADJU.NEXTVAL,5,'0'),UPPER(PIV_NO_TIPO_ADJU),PII_CO_USER);
+  EXCEPTION 
+     WHEN OTHERS THEN
+       RAISE;
+  END INS_TIPO_ADJU;
+  
+  PROCEDURE INS_ERROR_LOG(
+     PIV_ERROR_APP VARCHAR2,
+     PII_CO_USER INTEGER
+  )
+  IS
+  V_DES_ERROR VARCHAR2(10000);
+  V_NO_OBJT VARCHAR2(200);
+  V_SQLCODE INTEGER;
+  V_SQLERRM VARCHAR2(1000);
+  PRAGMA AUTONOMOUS_TRANSACTION;
+  BEGIN
+
+       V_DES_ERROR := '*************** ERROR ***************'||CHR(10)||CHR(13);
+       V_DES_ERROR := V_DES_ERROR ||'Objeto : ' ||$$PLSQL_UNIT|| CHR(10) ||CHR(13);
+       V_DES_ERROR := V_DES_ERROR ||'Descripcion: '||SQLERRM||CHR(10)||CHR(13);
+       V_DES_ERROR := V_DES_ERROR || DBMS_UTILITY.FORMAT_ERROR_BACKTRACE() ||CHR(10)||CHR(13);
+       V_DES_ERROR := V_DES_ERROR || '*************** BACKTRACE ***************';
+       V_NO_OBJT := $$PLSQL_UNIT;
+       V_SQLCODE := SQLCODE;
+       V_SQLERRM := SQLERRM;
+       INSERT INTO APP_FLYER.TP_ERROR_APP
+       (NO_ERROR_APP,NO_OBJT_ERROR_APP,CO_ERROR_APP,DA_MSG_ERROR_APP,DA_ERROR_APP,CO_USER_ERROR_APP)
+       VALUES
+       (PIV_ERROR_APP,V_NO_OBJT,V_SQLCODE,V_SQLERRM,V_DES_ERROR,PII_CO_USER);
+       COMMIT;
+  END INS_ERROR_LOG;
+  
+  PROCEDURE INS_FLYER(
+     PIV_NO_FLYER VARCHAR2,
+     PIB_IMG BLOB,
+     PII_CO_USER INTEGER
+  )
+  IS
+  V_FILE UTL_FILE.FILE_TYPE;
+  V_POS BINARY_INTEGER := 1;
+  V_BLOB_LEN BINARY_INTEGER;
+  V_AMOUNT BINARY_INTEGER  := 32767;
+  V_BUFFER RAW(32767);
+  BEGIN
+     -- REALIZANDO INSERCION 
+     INSERT INTO APP_FLYER.TP_FLYER
+     (ID_FLYER,NO_FLYER,IG_FLYER,CO_USER_APP)
+     VALUES
+     (LPAD(SEQ_TP_FLYER.NEXTVAL,5,'0'),PIV_NO_FLYER,BFILENAME('APP_FLYERS',PIV_NO_FLYER),PII_CO_USER);
+     -- GUARDANDO DIRECTORIO 
+     IF SQL%ROWCOUNT = 1 THEN
+         V_BLOB_LEN := DBMS_LOB.GETLENGTH(PIB_IMG);
+         V_FILE := UTL_FILE.FOPEN_NCHAR('APP_FLYERS',PIV_NO_FLYER,'wb',32767);
+         WHILE V_POS < V_BLOB_LEN LOOP
+            DBMS_LOB.READ(PIB_IMG,V_AMOUNT,V_POS,V_BUFFER);
+            UTL_FILE.PUT_RAW(V_FILE,V_BUFFER,TRUE);
+            V_POS := V_POS + V_AMOUNT;
+         END LOOP;
+         UTL_FILE.FCLOSE(V_FILE);
+     END IF;
+  END INS_FLYER;
+  
+  FUNCTION SEL_FLYER RETURN TA_FLYER PIPELINED IS
+  V_BFILE BFILE;
+  V_IMG_BLOB BLOB;
+  BEGIN
+    FOR ROWDATA IN (SELECT ID_FLYER,NO_FLYER,IG_FLYER FROM APP_FLYER.TP_FLYER
+                        WHERE
+                        ES_FLYER = 'A') LOOP
+         V_BFILE := ROWDATA.IG_FLYER;
+         IF DBMS_LOB.FILEEXISTS(V_BFILE) = 1 THEN 
+            DBMS_LOB.CREATETEMPORARY(V_IMG_BLOB,TRUE);
+            DBMS_LOB.FILEOPEN(V_BFILE);
+            
+            DECLARE
+            -- INICIALIZACION DE VARIABLES
+            V_DEST_OFFSET BINARY_INTEGER := 1;
+            V_SRC_OFFSET BINARY_INTEGER := 1;
+            BEGIN
+              DBMS_LOB.LOADBLOBFROMFILE(
+                DEST_LOB => V_IMG_BLOB,
+                SRC_BFILE => V_BFILE,
+                AMOUNT => DBMS_LOB.GETLENGTH(V_BFILE),
+                DEST_OFFSET => V_DEST_OFFSET,
+                SRC_OFFSET => V_SRC_OFFSET
+              );
+            END;
+            DBMS_LOB.FILECLOSE(V_BFILE);
+         ELSE  
+           DBMS_LOB.CREATETEMPORARY(V_IMG_BLOB,TRUE);
+           V_IMG_BLOB := EMPTY_BLOB();
+         END IF;
+         PIPE ROW(TOBJ_FLYER(ROWDATA.ID_FLYER,ROWDATA.NO_FLYER,V_IMG_BLOB));
+    END LOOP;
+    RETURN;
+  END;
+  
+  PROCEDURE INS_ADJU
+  (PIC_CO_TIPO_ADJU CHAR,
+   PIC_CO_FLYER CHAR,
+   PIV_NO_ADJUNTO VARCHAR2,
+   PIB_DOC_BLOB BLOB,
+   PIV_URL_DRIVE VARCHAR2,
+   PII_CO_USER INTEGER
+  )
+  IS 
+  V_BFILE UTL_FILE.FILE_TYPE;
+  V_POS BINARY_INTEGER := 1;
+  V_BLOB_LENGTH BINARY_INTEGER;
+  V_AMOUNT BINARY_INTEGER := 32767;
+  V_BUFFER RAW(32767);
+  BEGIN
+  
+   IF PIC_CO_TIPO_ADJU IN ('00003') THEN
+    INSERT INTO APP_FLYER.TP_ADJU
+    (ID_ADJU,NO_ADJU,DO_ADJU,URL_ADJU,CO_USER_APP,ID_TIPO_ADJU,ID_FLYER)
+    VALUES
+    (LPAD(SEQ_TP_ADJU.NEXTVAL,5,'0'),
+    PIV_NO_ADJUNTO,
+    NULL,
+    PIV_URL_DRIVE,
+    PII_CO_USER,
+    TRIM(PIC_CO_TIPO_ADJU),
+    TRIM(PIC_CO_FLYER));
+   END IF;
+   
+   IF PIC_CO_TIPO_ADJU IN ('00001','00005','00006') THEN
+     INSERT INTO APP_FLYER.TP_ADJU
+    (ID_ADJU,NO_ADJU,DO_ADJU,URL_ADJU,CO_USER_APP,ID_TIPO_ADJU,ID_FLYER)
+    VALUES
+    (LPAD(SEQ_TP_ADJU.NEXTVAL,5,'0'),
+    PIV_NO_ADJUNTO,
+    BFILENAME('APP_FLYER_ADJUNTO',PIV_NO_ADJUNTO),
+    PIV_URL_DRIVE,
+    PII_CO_USER,
+    TRIM(PIC_CO_TIPO_ADJU),
+    TRIM(PIC_CO_FLYER));
+   END IF;
+
+    IF SQL%ROWCOUNT = 1 THEN 
+       V_BLOB_LENGTH := DBMS_LOB.GETLENGTH(PIB_DOC_BLOB);
+       IF V_BLOB_LENGTH <> 0 THEN
+           V_BFILE := UTL_FILE.FOPEN_NCHAR('APP_FLYER_ADJUNTO',PIV_NO_ADJUNTO,'wb',32767);
+           WHILE V_POS < V_BLOB_LENGTH LOOP 
+              DBMS_LOB.READ(PIB_DOC_BLOB,V_AMOUNT,V_POS,V_BUFFER);
+              UTL_FILE.PUT_RAW(V_BFILE,V_BUFFER,TRUE);
+              V_POS := V_POS + V_AMOUNT;
+           END LOOP;
+           UTL_FILE.FCLOSE(V_BFILE);
+       END IF;
+    END IF;
+    
+  EXCEPTION 
+     WHEN OTHERS THEN
+       RAISE;
+  END INS_ADJU;
+  
+  FUNCTION SEL_ADJU_FLYER(PIC_CO_FLYER CHAR) RETURN TA_ADJU PIPELINED IS
+  V_BFILE BFILE;
+  V_IMG_BLOB BLOB;
+  BEGIN
+    FOR ROWDATA IN (SELECT P.ID_ADJU, P.NO_ADJU,P.DO_ADJU,P.URL_ADJU, P.ID_TIPO_ADJU,P.ID_FLYER FROM APP_FLYER.TP_ADJU P
+                        WHERE
+                     P.ID_FLYER = PIC_CO_FLYER AND
+                     P.FE_CREA_ADJU = (SELECT MAX(FE_CREA_ADJU) 
+                       FROM APP_FLYER.TP_ADJU S 
+                    WHERE 
+                    S.ID_TIPO_ADJU = P.ID_TIPO_ADJU AND 
+                    S.ID_FLYER = PIC_CO_FLYER)
+                    ORDER BY P.ID_TIPO_ADJU DESC, P.FE_CREA_ADJU DESC) LOOP
+                    
+        V_BFILE := ROWDATA.DO_ADJU;
+        IF ROWDATA.ID_TIPO_ADJU IN ('00003') THEN 
+           V_IMG_BLOB := NULL; 
+        END IF;
+        IF ROWDATA.ID_TIPO_ADJU IN ('00005','00006','00001') THEN
+            IF DBMS_LOB.FILEEXISTS(V_BFILE) = 1 THEN
+               DBMS_LOB.CREATETEMPORARY(V_IMG_BLOB,TRUE);
+               DBMS_LOB.FILEOPEN(V_BFILE);
+               DECLARE 
+                  V_SRC_OFFSET BINARY_INTEGER := 1;
+                  V_DEST_OFFSET BINARY_INTEGER := 1;
+               BEGIN
+                  DBMS_LOB.LOADBLOBFROMFILE(
+                     dest_lob=>V_IMG_BLOB,
+                     src_bfile=>V_BFILE,
+                     amount=>DBMS_LOB.GETLENGTH(V_BFILE),
+                     dest_offset=>V_SRC_OFFSET,
+                     src_offset=>V_DEST_OFFSET
+                  );
+               END;
+               DBMS_LOB.FILECLOSE(V_BFILE);
+            ELSE
+              V_IMG_BLOB := NULL;
+            END IF;
+        END IF;
+        PIPE ROW(TOBJ_ADJU(ROWDATA.ID_ADJU,ROWDATA.NO_ADJU,V_IMG_BLOB,ROWDATA.URL_ADJU,ROWDATA.ID_TIPO_ADJU,ROWDATA.ID_FLYER));
+    END LOOP;
+    RETURN;
+  END SEL_ADJU_FLYER;
+END;
+/
