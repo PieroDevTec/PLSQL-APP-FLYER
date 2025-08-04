@@ -20,13 +20,22 @@ CREATE OR REPLACE PACKAGE APP_FLYER.PKG_UTIL------------------------------------
 --
 --  🛠 HISTORIAL DE CAMBIOS
 --     - [03/08/2025] Creación del funcion ERROR_LOG (Piero Alvarez)
+--     - [03/08/2025] Creación de la variables CO_PDF  (Piero Alvarez)
+--     - [03/08/2025] Creación de la variables CO_EXCEL  (Piero Alvarez)
+--     - [03/08/2025] Creación de la variables CO_WORD  (Piero Alvarez)
+--     - [03/08/2025] Creación de la variables CO_URL_DRIVE  (Piero Alvarez)
 --     - [03/08/2025] Creación del variable NO_APP (Piero Alvarez)
 --     - [03/08/2025] Creación del variable MSG_ERROR_GENERAL (Piero Alvarez)
 --     - [03/08/2025] Creación del paquete PKG_UTIL (Piero Alvarez)
 --------------------------------------------------------------------------------
 IS
-  MSG_ERROR_GENERAL VARCHAR2(100):= 'ERRBD::Ha ocurrido un problema en la Base de Datos, comunicarse con el area de soporte del Sistema.';
-  NO_APP VARCHAR2(100) := 'APLICACION FLYER';
+  CO_PDF CONSTANT CHAR(5):='00001';
+  CO_EXCEL CONSTANT CHAR(5) := '00005';
+  CO_WORD CONSTANT CHAR(5) := '00006';
+  CO_URL_DRIVE  CONSTANT CHAR(5) := '00003';
+  MSG_ERROR_GENERAL CONSTANT VARCHAR2(100):= 'ERRBD::Ha ocurrido un problema en la Base de Datos, comunicarse con el area de soporte del Sistema.';
+  NO_APP CONSTANT VARCHAR2(100) := 'APLICACION FLYER';
+  
   FUNCTION ERROR_LOG
   RETURN CLOB;
 END;
